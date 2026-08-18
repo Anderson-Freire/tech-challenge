@@ -1,8 +1,16 @@
-using Desafio.Api.Api.Contratos;
+using Desafio.Api.Api.Comum;
 using Desafio.Api.Api.Middlewares;
-using Desafio.Api.Aplicacao;
-using Desafio.Api.Dominio;
-using Desafio.Api.Infraestrutura;
+using Desafio.Api.Api.Serializacao;
+using Desafio.Api.Kernel.Dominio.Excecoes;
+using Desafio.Api.Kernel.Infraestrutura.ConfiguracaoBancoDeDados;
+using Desafio.Api.Modules.Beneficiarios.Aplicacao.CasosDeUso;
+using Desafio.Api.Modules.Beneficiarios.Aplicacao.Interfaces;
+using Desafio.Api.Modules.Beneficiarios.Infraestrutura.Repositorios;
+using Desafio.Api.Modules.Planos.Aplicacao.CasosDeUso;
+using Desafio.Api.Modules.Planos.Aplicacao.Interfaces;
+using Desafio.Api.Modules.Planos.Aplicacao.Validadores;
+using Desafio.Api.Modules.Planos.Infraestrutura.Repositorios;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,12 +21,34 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 
+var connectionString = builder.Configuration.GetConnectionString("Postgres");
+
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "A connection string 'Postgres' não foi configurada.");
+}
+
 builder.Services.AddDbContext<AppDbContext>(opcoes =>
-    opcoes.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+    opcoes.UseNpgsql(connectionString));
 
-builder.Services.AddScoped<PlanoServico>();
+builder.Services.AddScoped<IPlanoRepositorio, PlanoRepositorio>();
+builder.Services.AddScoped<IBeneficiarioRepositorio, BeneficiarioRepositorio>();
 
-// A interface web roda em outra origem (porta 4200) e o navegador bloqueia a chamada sem isto.
+builder.Services.AddScoped<ListarPlanosCasoDeUso>();
+builder.Services.AddScoped<ObterPlanoCasoDeUso>();
+builder.Services.AddScoped<CriarPlanoCasoDeUso>();
+builder.Services.AddScoped<AtualizarPlanoCasoDeUso>();
+builder.Services.AddScoped<ExcluirPlanoUseCase>();
+
+builder.Services.AddScoped<ListarBeneficiariosCasoDeUso>();
+builder.Services.AddScoped<ObterBeneficiarioCasoDeUso>();
+builder.Services.AddScoped<CriarBeneficiarioCasoDeUso>();
+builder.Services.AddScoped<AtualizarBeneficiarioCasoDeUso>();
+builder.Services.AddScoped<ExcluirBeneficiarioCasoDeUso>();
+
+builder.Services.AddValidatorsFromAssemblyContaining<CriarPlanoRequestValidador>();
+
 builder.Services.AddCors(opcoes => opcoes.AddPolicy(
     PoliticaDaWeb,
     politica => politica
@@ -28,7 +58,8 @@ builder.Services.AddCors(opcoes => opcoes.AddPolicy(
 
 builder.Services
     .AddControllers()
-    .AddJsonOptions(opcoes => JsonPadrao.Aplicar(opcoes.JsonSerializerOptions));
+    .AddJsonOptions(opcoes =>
+        JsonPadrao.Aplicar(opcoes.JsonSerializerOptions));
 
 builder.Services.Configure<ApiBehaviorOptions>(opcoes =>
 {
@@ -36,11 +67,20 @@ builder.Services.Configure<ApiBehaviorOptions>(opcoes =>
     {
         var detalhes = contexto.ModelState
             .Where(entrada => entrada.Value is { Errors.Count: > 0 })
-            .Select(entrada => new DetalheErro(NormalizarCampo(entrada.Key), "invalido"))
+            .Select(entrada => new DetalheErro(
+                NormalizarCampo(entrada.Key),
+                "invalido"))
             .ToList();
 
-        return new BadRequestObjectResult(
-            new ErroResponse("ValidacaoInvalida", "Corpo da requisição inválido", detalhes));
+        var resposta = Resposta<object?>.Falha(
+            new ValidacaoExcecao(
+                "Corpo da requisição inválido",
+                detalhes));
+
+        return new ObjectResult(resposta)
+        {
+            StatusCode = (int)resposta.CodigoStatus
+        };
     };
 });
 
@@ -49,12 +89,13 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-app.UseMiddleware<TratamentoDeErroMiddleware>();
+app.UseMiddleware<TratamentoDeExcecaoMiddleware>();
 
 app.UseCors(PoliticaDaWeb);
 
 app.UseSwagger();
-app.UseSwaggerUI(opcoes => opcoes.RoutePrefix = "swagger");
+app.UseSwaggerUI(opcoes =>
+    opcoes.RoutePrefix = "swagger");
 
 app.MapControllers();
 
@@ -63,7 +104,9 @@ await PrepararBancoAsync(app);
 app.Run();
 
 static string NormalizarCampo(string chave) =>
-    chave.StartsWith("$.", StringComparison.Ordinal) ? chave[2..] : chave;
+    chave.StartsWith("$.", StringComparison.Ordinal)
+        ? chave[2..]
+        : chave;
 
 static async Task PrepararBancoAsync(WebApplication app)
 {
@@ -76,12 +119,18 @@ static async Task PrepararBancoAsync(WebApplication app)
         try
         {
             await using var escopo = app.Services.CreateAsyncScope();
-            var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var db = escopo.ServiceProvider
+                .GetRequiredService<AppDbContext>();
 
             await db.Database.MigrateAsync();
-            await CargaInicial.AplicarAsync(db);
 
-            logger.LogInformation("Banco preparado na tentativa {Tentativa}", tentativa);
+            // await CargaInicial.AplicarAsync(db);
+
+            logger.LogInformation(
+                "Banco preparado na tentativa {Tentativa}",
+                tentativa);
+
             return;
         }
         catch (Exception excecao) when (tentativa < TentativasMaximas)
