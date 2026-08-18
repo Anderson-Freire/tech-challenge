@@ -1,18 +1,19 @@
-using Desafio.Api.Infraestrutura;
+using Desafio.Application.Compartilhado;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace Desafio.Api.Controllers;
 
 [ApiController]
 [Route("health")]
 [Produces("application/json")]
-public class HealthController(AppDbContext db) : ControllerBase
+public sealed class HealthController(IVerificadorDeBanco banco) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> Obter(CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> ObterAsync(CancellationToken cancellationToken)
     {
-        var bancoDisponivel = await db.Database.CanConnectAsync(cancellationToken);
+        var bancoDisponivel = await banco.EstaDisponivelAsync(cancellationToken);
 
         var resposta = new
         {

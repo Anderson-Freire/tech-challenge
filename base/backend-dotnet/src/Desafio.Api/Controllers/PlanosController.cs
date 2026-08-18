@@ -1,5 +1,6 @@
-using Desafio.Api.Api.Contratos;
-using Desafio.Api.Aplicacao;
+using Desafio.Api.Contratos;
+using Desafio.Application.Planos.Dtos;
+using Desafio.Application.Planos.UseCases;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Desafio.Api.Controllers;
@@ -7,62 +8,63 @@ namespace Desafio.Api.Controllers;
 [ApiController]
 [Route("planos")]
 [Produces("application/json")]
-public class PlanosController(PlanoServico servico) : ControllerBase
+public sealed class PlanosController(
+    ListarPlanosUseCase listar,
+    ObterPlanoUseCase obter,
+    CriarPlanoUseCase criar,
+    AtualizarPlanoUseCase atualizar,
+    ExcluirPlanoUseCase excluir) : ControllerBase
 {
     [HttpGet]
-    [ProducesResponseType<IEnumerable<PlanoResponse>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> Listar(CancellationToken cancellationToken)
+    [ProducesResponseType<IReadOnlyList<ListarPlanosResponse>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListarAsync(CancellationToken cancellationToken)
     {
-        var planos = await servico.ListarAsync(cancellationToken);
-
-        return Ok(planos.Select(PlanoResponse.De).ToList());
+        return Ok(await listar.ExecutarAsync(new ListarPlanosRequest(), cancellationToken));
     }
 
     [HttpGet("{id:guid}")]
-    [ProducesResponseType<PlanoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ObterPlanoResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ErroResponse>(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Obter(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> ObterAsync(Guid id, CancellationToken cancellationToken)
     {
-        var plano = await servico.ObterAsync(id, cancellationToken);
-
-        return Ok(PlanoResponse.De(plano));
+        return Ok(await obter.ExecutarAsync(new ObterPlanoRequest(id), cancellationToken));
     }
 
     [HttpPost]
-    [ProducesResponseType<PlanoResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<CriarPlanoResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ErroResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ErroResponse>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Criar([FromBody] PlanoRequest requisicao, CancellationToken cancellationToken)
+    public async Task<IActionResult> CriarAsync(
+        [FromBody] CriarPlanoRequest request,
+        CancellationToken cancellationToken)
     {
-        var dados = new PlanoRequestDados(requisicao.Nome, requisicao.CodigoRegistroAns);
-        var plano = await servico.CriarAsync(dados, cancellationToken);
-
-        return CreatedAtAction(nameof(Obter), new { id = plano.Id }, PlanoResponse.De(plano));
+        var plano = await criar.ExecutarAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(ObterAsync), new { id = plano.Id }, plano);
     }
 
     [HttpPut("{id:guid}")]
-    [ProducesResponseType<PlanoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<AtualizarPlanoResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ErroResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ErroResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ErroResponse>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Atualizar(
+    public async Task<IActionResult> AtualizarAsync(
         Guid id,
-        [FromBody] PlanoRequest requisicao,
+        [FromBody] AtualizarPlanoRequest request,
         CancellationToken cancellationToken)
     {
-        var dados = new PlanoRequestDados(requisicao.Nome, requisicao.CodigoRegistroAns);
-        var plano = await servico.AtualizarAsync(id, dados, cancellationToken);
+        var plano = await atualizar.ExecutarAsync(
+            request with { Id = id },
+            cancellationToken);
 
-        return Ok(PlanoResponse.De(plano));
+        return Ok(plano);
     }
 
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ErroResponse>(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Excluir(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> ExcluirAsync(Guid id, CancellationToken cancellationToken)
     {
-        await servico.ExcluirAsync(id, cancellationToken);
-
+        await excluir.ExecutarAsync(new ExcluirPlanoRequest(id), cancellationToken);
         return NoContent();
     }
 }

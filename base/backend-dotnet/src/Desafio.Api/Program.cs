@@ -1,10 +1,9 @@
-using Desafio.Api.Api.Contratos;
-using Desafio.Api.Api.Middlewares;
-using Desafio.Api.Aplicacao;
-using Desafio.Api.Dominio;
-using Desafio.Api.Infraestrutura;
+using Desafio.Api.Contratos;
+using Desafio.Api.Middlewares;
+using Desafio.Application;
+using Desafio.Domain.Compartilhado.Excecoes;
+using Desafio.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 const string PoliticaDaWeb = "web";
 
@@ -13,12 +12,17 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 
-builder.Services.AddDbContext<AppDbContext>(opcoes =>
-    opcoes.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+var connectionString = builder.Configuration.GetConnectionString("Postgres");
 
-builder.Services.AddScoped<PlanoServico>();
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "A connection string 'Postgres' não foi configurada.");
+}
 
-// A interface web roda em outra origem (porta 4200) e o navegador bloqueia a chamada sem isto.
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(connectionString);
+
 builder.Services.AddCors(opcoes => opcoes.AddPolicy(
     PoliticaDaWeb,
     politica => politica
@@ -27,7 +31,7 @@ builder.Services.AddCors(opcoes => opcoes.AddPolicy(
         .AllowAnyMethod()));
 
 builder.Services
-    .AddControllers()
+    .AddControllers(opcoes => opcoes.SuppressAsyncSuffixInActionNames = false)
     .AddJsonOptions(opcoes => JsonPadrao.Aplicar(opcoes.JsonSerializerOptions));
 
 builder.Services.Configure<ApiBehaviorOptions>(opcoes =>
@@ -40,7 +44,7 @@ builder.Services.Configure<ApiBehaviorOptions>(opcoes =>
             .ToList();
 
         return new BadRequestObjectResult(
-            new ErroResponse("ValidacaoInvalida", "Corpo da requisição inválido", detalhes));
+            ErroResponse.Validacao("Corpo da requisição inválido", detalhes));
     };
 });
 
@@ -49,52 +53,18 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-app.UseMiddleware<TratamentoDeErroMiddleware>();
-
+app.UseMiddleware<LogDeRequisicaoMiddleware>();
+app.UseMiddleware<TratamentoDeExcecaoMiddleware>();
 app.UseCors(PoliticaDaWeb);
-
 app.UseSwagger();
 app.UseSwaggerUI(opcoes => opcoes.RoutePrefix = "swagger");
-
 app.MapControllers();
 
-await PrepararBancoAsync(app);
+await app.Services.PrepararBancoAsync(app.Logger);
 
 app.Run();
 
 static string NormalizarCampo(string chave) =>
     chave.StartsWith("$.", StringComparison.Ordinal) ? chave[2..] : chave;
-
-static async Task PrepararBancoAsync(WebApplication app)
-{
-    const int TentativasMaximas = 10;
-
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-
-    for (var tentativa = 1; ; tentativa++)
-    {
-        try
-        {
-            await using var escopo = app.Services.CreateAsyncScope();
-            var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
-
-            await db.Database.MigrateAsync();
-            await CargaInicial.AplicarAsync(db);
-
-            logger.LogInformation("Banco preparado na tentativa {Tentativa}", tentativa);
-            return;
-        }
-        catch (Exception excecao) when (tentativa < TentativasMaximas)
-        {
-            logger.LogWarning(
-                "Banco indisponível na tentativa {Tentativa} de {TentativasMaximas}: {Mensagem}",
-                tentativa,
-                TentativasMaximas,
-                excecao.Message);
-
-            await Task.Delay(TimeSpan.FromSeconds(3));
-        }
-    }
-}
 
 public partial class Program;

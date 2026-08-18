@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace Desafio.Api.Tests;
 
 [Collection(ColecaoDaApi.Nome)]
-public class PlanosTests(ApiFixture fixture) : IAsyncLifetime
+public sealed class PlanosTests(ApiFixture fixture) : IAsyncLifetime
 {
     private HttpClient Client => fixture.Client;
 
