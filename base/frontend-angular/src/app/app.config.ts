@@ -5,7 +5,7 @@ import {
   provideZoneChangeDetection
 } from '@angular/core';
 
-import { API_BASE, API_BASE_PADRAO } from './nucleo/api';
+import { API_BASE, API_BASE_PADRAO } from './core/api';
 
 export const appConfig: ApplicationConfig = {
   providers: [

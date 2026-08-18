@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using Desafio.Api.Api.Contratos;
+using Desafio.Api.Contratos;
 
 namespace Desafio.Api.Tests;
 

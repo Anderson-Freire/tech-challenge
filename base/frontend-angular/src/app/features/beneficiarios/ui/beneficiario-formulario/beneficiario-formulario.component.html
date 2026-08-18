@@ -1,0 +1,71 @@
+<section class="cartao">
+  <header class="cabecalho">
+    <h2>{{ ehEdicao() ? 'Editar beneficiário' : 'Novo beneficiário' }}</h2>
+    <button type="button" (click)="cancelado.emit()">Cancelar</button>
+  </header>
+
+  @if (erro()) {
+    <p class="aviso erro">{{ erro() }}</p>
+  }
+
+  <form [formGroup]="formulario" (ngSubmit)="enviar()" novalidate>
+    <label>
+      Nome completo
+      <input type="text" formControlName="nome_completo" maxlength="120" />
+      @if (formulario.controls.nome_completo.touched && formulario.controls.nome_completo.invalid) {
+        <span class="campo-erro">Informe um nome com 3 a 120 caracteres.</span>
+      }
+    </label>
+
+    <label>
+      CPF
+      <input
+        type="text"
+        formControlName="cpf"
+        maxlength="11"
+        inputmode="numeric"
+        [attr.readonly]="ehEdicao() ? true : null"
+      />
+      @if (!ehEdicao() && formulario.controls.cpf.touched && formulario.controls.cpf.invalid) {
+        <span class="campo-erro">Informe um CPF válido, só com 11 dígitos, sem pontuação.</span>
+      }
+    </label>
+
+    <label>
+      Data de nascimento
+      <input type="date" formControlName="data_nascimento" />
+      @if (formulario.controls.data_nascimento.touched && formulario.controls.data_nascimento.invalid) {
+        <span class="campo-erro">A data de nascimento precisa ser anterior a hoje.</span>
+      }
+    </label>
+
+    <label>
+      Plano
+      <select formControlName="plano_id">
+        <option value="">Selecione</option>
+        @for (plano of planos(); track plano.id) {
+          <option [value]="plano.id">{{ plano.nome }}</option>
+        }
+      </select>
+      @if (formulario.controls.plano_id.touched && formulario.controls.plano_id.invalid) {
+        <span class="campo-erro">Selecione um plano.</span>
+      }
+    </label>
+
+    @if (ehEdicao()) {
+      <label>
+        Situação
+        <select formControlName="status">
+          <option value="ATIVO">ATIVO</option>
+          <option value="INATIVO">INATIVO</option>
+        </select>
+      </label>
+    }
+
+    <div class="acoes">
+      <button type="submit" [disabled]="enviando()">
+        {{ enviando() ? 'Salvando...' : 'Salvar' }}
+      </button>
+    </div>
+  </form>
+</section>

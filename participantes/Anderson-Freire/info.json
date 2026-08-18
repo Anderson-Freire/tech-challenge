@@ -1,14 +1,12 @@
 {
-  "identificador": "Anderson-Freire",
-  "nome": "Alteracoes na API",
+  "identificador": "anderson-freire",
+  "nome": "Anderson Freire",
   "email": "andersongomesfreire566788@gmail.com",
   "imagem_api": "andersonfr/desafio-4tech-api:anderson-freire",
   "imagem_web": "andersonfr/desafio-4tech-web:anderson-freire",
   "stack": [
     "dotnet-10",
     "postgres-17",
-    "angular-20",
-    "react-19",
-    "php-8.5"
+    "angular-20"
   ]
 }

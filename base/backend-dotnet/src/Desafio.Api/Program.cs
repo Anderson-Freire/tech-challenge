@@ -1,18 +1,9 @@
-using Desafio.Api.Api.Comum;
-using Desafio.Api.Api.Middlewares;
-using Desafio.Api.Api.Serializacao;
-using Desafio.Api.Kernel.Dominio.Excecoes;
-using Desafio.Api.Kernel.Infraestrutura.ConfiguracaoBancoDeDados;
-using Desafio.Api.Modules.Beneficiarios.Aplicacao.CasosDeUso;
-using Desafio.Api.Modules.Beneficiarios.Aplicacao.Interfaces;
-using Desafio.Api.Modules.Beneficiarios.Infraestrutura.Repositorios;
-using Desafio.Api.Modules.Planos.Aplicacao.CasosDeUso;
-using Desafio.Api.Modules.Planos.Aplicacao.Interfaces;
-using Desafio.Api.Modules.Planos.Aplicacao.Validadores;
-using Desafio.Api.Modules.Planos.Infraestrutura.Repositorios;
-using FluentValidation;
+using Desafio.Api.Contratos;
+using Desafio.Api.Middlewares;
+using Desafio.Application;
+using Desafio.Domain.Compartilhado.Excecoes;
+using Desafio.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 const string PoliticaDaWeb = "web";
 
@@ -29,25 +20,8 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "A connection string 'Postgres' não foi configurada.");
 }
 
-builder.Services.AddDbContext<AppDbContext>(opcoes =>
-    opcoes.UseNpgsql(connectionString));
-
-builder.Services.AddScoped<IPlanoRepositorio, PlanoRepositorio>();
-builder.Services.AddScoped<IBeneficiarioRepositorio, BeneficiarioRepositorio>();
-
-builder.Services.AddScoped<ListarPlanosCasoDeUso>();
-builder.Services.AddScoped<ObterPlanoCasoDeUso>();
-builder.Services.AddScoped<CriarPlanoCasoDeUso>();
-builder.Services.AddScoped<AtualizarPlanoCasoDeUso>();
-builder.Services.AddScoped<ExcluirPlanoUseCase>();
-
-builder.Services.AddScoped<ListarBeneficiariosCasoDeUso>();
-builder.Services.AddScoped<ObterBeneficiarioCasoDeUso>();
-builder.Services.AddScoped<CriarBeneficiarioCasoDeUso>();
-builder.Services.AddScoped<AtualizarBeneficiarioCasoDeUso>();
-builder.Services.AddScoped<ExcluirBeneficiarioCasoDeUso>();
-
-builder.Services.AddValidatorsFromAssemblyContaining<CriarPlanoRequestValidador>();
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(connectionString);
 
 builder.Services.AddCors(opcoes => opcoes.AddPolicy(
     PoliticaDaWeb,
@@ -57,9 +31,8 @@ builder.Services.AddCors(opcoes => opcoes.AddPolicy(
         .AllowAnyMethod()));
 
 builder.Services
-    .AddControllers()
-    .AddJsonOptions(opcoes =>
-        JsonPadrao.Aplicar(opcoes.JsonSerializerOptions));
+    .AddControllers(opcoes => opcoes.SuppressAsyncSuffixInActionNames = false)
+    .AddJsonOptions(opcoes => JsonPadrao.Aplicar(opcoes.JsonSerializerOptions));
 
 builder.Services.Configure<ApiBehaviorOptions>(opcoes =>
 {
@@ -67,20 +40,11 @@ builder.Services.Configure<ApiBehaviorOptions>(opcoes =>
     {
         var detalhes = contexto.ModelState
             .Where(entrada => entrada.Value is { Errors.Count: > 0 })
-            .Select(entrada => new DetalheErro(
-                NormalizarCampo(entrada.Key),
-                "invalido"))
+            .Select(entrada => new DetalheErro(NormalizarCampo(entrada.Key), "invalido"))
             .ToList();
 
-        var resposta = Resposta<object?>.Falha(
-            new ValidacaoExcecao(
-                "Corpo da requisição inválido",
-                detalhes));
-
-        return new ObjectResult(resposta)
-        {
-            StatusCode = (int)resposta.CodigoStatus
-        };
+        return new BadRequestObjectResult(
+            ErroResponse.Validacao("Corpo da requisição inválido", detalhes));
     };
 });
 
@@ -89,61 +53,18 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+app.UseMiddleware<LogDeRequisicaoMiddleware>();
 app.UseMiddleware<TratamentoDeExcecaoMiddleware>();
-
 app.UseCors(PoliticaDaWeb);
-
 app.UseSwagger();
-app.UseSwaggerUI(opcoes =>
-    opcoes.RoutePrefix = "swagger");
-
+app.UseSwaggerUI(opcoes => opcoes.RoutePrefix = "swagger");
 app.MapControllers();
 
-await PrepararBancoAsync(app);
+await app.Services.PrepararBancoAsync(app.Logger);
 
 app.Run();
 
 static string NormalizarCampo(string chave) =>
-    chave.StartsWith("$.", StringComparison.Ordinal)
-        ? chave[2..]
-        : chave;
-
-static async Task PrepararBancoAsync(WebApplication app)
-{
-    const int TentativasMaximas = 10;
-
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-
-    for (var tentativa = 1; ; tentativa++)
-    {
-        try
-        {
-            await using var escopo = app.Services.CreateAsyncScope();
-
-            var db = escopo.ServiceProvider
-                .GetRequiredService<AppDbContext>();
-
-            await db.Database.MigrateAsync();
-
-            // await CargaInicial.AplicarAsync(db);
-
-            logger.LogInformation(
-                "Banco preparado na tentativa {Tentativa}",
-                tentativa);
-
-            return;
-        }
-        catch (Exception excecao) when (tentativa < TentativasMaximas)
-        {
-            logger.LogWarning(
-                "Banco indisponível na tentativa {Tentativa} de {TentativasMaximas}: {Mensagem}",
-                tentativa,
-                TentativasMaximas,
-                excecao.Message);
-
-            await Task.Delay(TimeSpan.FromSeconds(3));
-        }
-    }
-}
+    chave.StartsWith("$.", StringComparison.Ordinal) ? chave[2..] : chave;
 
 public partial class Program;

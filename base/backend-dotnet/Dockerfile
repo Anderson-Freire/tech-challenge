@@ -2,6 +2,9 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 COPY Desafio.sln .
+COPY src/Desafio.Domain/Desafio.Domain.csproj src/Desafio.Domain/
+COPY src/Desafio.Application/Desafio.Application.csproj src/Desafio.Application/
+COPY src/Desafio.Infrastructure/Desafio.Infrastructure.csproj src/Desafio.Infrastructure/
 COPY src/Desafio.Api/Desafio.Api.csproj src/Desafio.Api/
 RUN dotnet restore src/Desafio.Api/Desafio.Api.csproj
 
