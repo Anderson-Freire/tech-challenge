@@ -1,0 +1,18 @@
+.topo {
+  border-bottom: 1px solid #dcdfe4;
+  padding: 1.25rem 1.5rem;
+  background: #fff;
+}
+
+.topo h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  display: grid;
+  gap: 1.25rem;
+}
